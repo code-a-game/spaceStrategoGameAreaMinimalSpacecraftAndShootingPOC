@@ -3,6 +3,7 @@ class Spacecraft {
     constructor(config) {
       this.playerNumber = config.playerNumber;
       this.playerName = config.playerName;
+      this.playerDisplayName = config.playerDisplayName;
       this.teamNumber = config.teamNumber;
       this.xLocal = config.xLocal;
       this.yLocal = config.yLocal;
@@ -16,6 +17,23 @@ class Spacecraft {
       this.hits = config.hits || Array(15).fill(0);
       this.planetIndex = config.planetIndex;
       this.fixedMinimapIndex = config.planetIndex;
+
+      this.team = config.team;
+      this.characterId = config.characterId;
+      this.characterRank = config.characterRank;
+      this.characterName = config.characterName;
+      this.characterInstanceId = config.characterInstanceId;
+      this.x = config.x;
+      this.y = config.y;
+      this.size = config.size;
+      this.isReady = config.isReady;
+      this.hasCharacter = config.hasCharacter;
+      this.isRevealed = config.isRevealed;
+      this.hasBattled = config.hasBattled;
+      this.status = config.status; // 'available', 'inBattle', 'lost', 'needsCharacter', 'wonGameTrigger'
+      this.inBattleWith = config.inBattleWith;
+      this.battleOutcome = config.battleOutcome; // { result: 'pending', opponentInfo: null }
+      this.lastProcessedResetFlag = config.lastProcessedResetFlag;
     }
   
     drawSpacecraft() {
@@ -41,10 +59,12 @@ class Spacecraft {
   
         if (detailsLevel.showGameAreaImage) {
           // Blue cloaked
-          if (this.playerNumber === 0) {
+          
+//          if (this.playerNumber === 0) {
             drawingContext.shadowBlur = 60; // Increased blur
             drawingContext.shadowColor = 'rgba(40, 233, 255, 615)'; // Blue
             tint(40, 233, 255, 140); // blue
+  /*
             // Green cloaked
           } else if (this.playerNumber === 1) {
             drawingContext.shadowBlur = 60; // Increased blur
@@ -58,7 +78,7 @@ class Spacecraft {
           } else if (this.playerNumber === 3) {
             drawingContext.shadowBlur = 60; // Increased blur
             drawingContext.shadowColor = 'rgba(38, 255, 168, 615)'; // Green
-          }
+          }*/
           image(spacecraftImages[this.playerNumber], 0, 0, this.diameter * 1.5, this.diameter * 1.5);
         } else {
           rect(-this.diameter / 3, -this.diameter / 3, this.diameter, this.diameter);
@@ -152,6 +172,24 @@ class Spacecraft {
       this.bullets = sharedSpacecraft.bullets;
       this.hits = sharedSpacecraft.hits;
       this.planetIndex = sharedSpacecraft.planetIndex;
+
+      this.playerDisplayName = sharedSpacecraft.playerDisplayName;
+      this.team = sharedSpacecraft.team;
+      this.characterId = sharedSpacecraft.characterId;
+      this.characterRank = sharedSpacecraft.characterRank;
+      this.characterName = sharedSpacecraft.characterName;
+      this.characterInstanceId = sharedSpacecraft.characterInstanceId;
+      this.x = sharedSpacecraft.x;
+      this.y = sharedSpacecraft.y;
+      this.size = sharedSpacecraft.size;
+      this.isReady = sharedSpacecraft.isReady;
+      this.hasCharacter = sharedSpacecraft.hasCharacter;
+      this.isRevealed = sharedSpacecraft.isRevealed;
+      this.hasBattled = sharedSpacecraft.hasBattled;
+      this.status = sharedSpacecraft.status; // 'available', 'inBattle', 'lost', 'needsCharacter', 'wonGameTrigger'
+      this.inBattleWith = sharedSpacecraft.inBattleWith;
+      this.battleOutcome = sharedSpacecraft.battleOutcome; // { result: 'pending', opponentInfo: null }
+      this.lastProcessedResetFlag = sharedSpacecraft.lastProcessedResetFlag;
     }
   
     checkBulletCollision(bullet, playerXGlobal, playerYGlobal) {

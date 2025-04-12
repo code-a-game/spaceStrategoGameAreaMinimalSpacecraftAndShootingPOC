@@ -3,7 +3,54 @@ let me;
 let guests;
 let shared;
 
-let gameState = "START-SCREEN";
+// Game constants
+const SCREEN_WIDTH = 2000;
+const SCREEN_HEIGHT = 1200;
+const GAME_AREA_X = 600;
+const GAME_AREA_Y = 50;
+const GAME_AREA_WIDTH = 1200;
+const GAME_AREA_HEIGHT = 700;
+const GAME_AREA_RIGHT = GAME_AREA_X + GAME_AREA_WIDTH;
+const GAME_AREA_BOTTOM = GAME_AREA_Y + GAME_AREA_HEIGHT;
+
+const SPACECRAFT_SIZE = 40; // Diameter of spacecraft circles
+const SPACECRAFT_SPEED = 4;
+
+// Game state variables
+let nameInput;
+let chooseTeamBlueButton;
+let chooseTeamGreenButton;
+let startGameButton;
+let newGameButton;
+let characterList = [];
+let message = ""; // For displaying game info/results
+
+// Define the Stratego pieces
+// Rank: Numerical value for comparison (higher is better, except Spy/Bomb/Flag)
+// Name: Display name
+// Count: How many per team
+const CHARACTER_DEFINITIONS = [
+  { rank: -1, name: "Core Command", id: "F", count: 1, isFlag: true }, // Special rank -1 for Flag
+  { rank: 10, name: "Star Commander", id: "10", count: 1 },
+  { rank: 9, name: "Fleet Admiral", id: "9", count: 1 },
+  { rank: 8, name: "Star Captain", id: "8", count: 2 },
+  { rank: 7, name: "Squadron Leader", id: "7", count: 3 },
+  { rank: 6, name: "Ship Captain", id: "6", count: 4 },
+  { rank: 5, name: "Lt. Commander", id: "5", count: 4 },
+  { rank: 4, name: "Chief P. Officer", id: "4", count: 4 },
+  { rank: 3, name: "Engineer", id: "3", count: 5, isMiner: true }, // Special ability
+  { rank: 2, name: "Recon Drone", id: "2", count: 8 },
+  { rank: 1, name: "Stealth Op", id: "S", count: 1, isSpy: true }, // Special ability (using rank 1 for Spy)
+  { rank: 0, name: "Asteroid Field", id: "A", count: 6, isBomb: true, immovable: true }, // Special rank 0 for Bomb
+];
+
+// Calculate total pieces (should be 40)
+let totalPieces = 0;
+CHARACTER_DEFINITIONS.forEach(def => totalPieces += def.count);
+console.log("Total pieces per team:", totalPieces); // Verification
+
+// old
+//let gameState = "START-SCREEN";
 
 let fixedMinimap
 let solarSystem;
@@ -107,7 +154,7 @@ function loadNextBatchForPlanet(planetIndex, batchIndex) {
 
   // Only proceed if we have more frames to load
   if (start < totalFrames) {
-//    console.log(`Loading frames ${start} to ${end - 1} for planet ${planetIndex}`);
+    //    console.log(`Loading frames ${start} to ${end - 1} for planet ${planetIndex}`);
 
     for (let i = start; i < end; i++) {
       minimapImg[planetIndex][i] = loadImage(
@@ -130,8 +177,8 @@ function imageLoaded(planetIndex) {
 
   // Log progress every 20 images
   if (imagesLoaded % 20 === 0) {
-//    console.log(`Loading progress: ${imagesLoaded}/${totalExpectedImages} images loaded`);
-//    console.log(`Planet progress: [${loadedCounts.join(', ')}]`);
+    //    console.log(`Loading progress: ${imagesLoaded}/${totalExpectedImages} images loaded`);
+    //    console.log(`Planet progress: [${loadedCounts.join(', ')}]`);
   }
 
   // Check if all images are loaded
@@ -145,14 +192,17 @@ function setup() {
   createCanvas(screenLayout.screenWidth, screenLayout.screenHeight);
   //frameRate(30);
   // Initialize the 2D array for minimapImg
-  
+
+  createNameInput();
+  initializeCharacterList();
+
   minimapImg = Array(totalNumberOfPlanets).fill().map(() => []);
 
   // Out commented while developing
   // Calculate total expected images
   totalExpectedImages = totalImagesPerPlanet.reduce((sum, count) => sum + count, 0);
   console.log(`Total expected images: ${totalExpectedImages}`);
-  loadFrames()
+  //loadFrames()
 
   fixedMinimap = new BasicMinimap(x = 250, y = 250, diameter = 300, color = 'grey', diameterPlanet = screenLayout.diameterPlanet);
 
@@ -195,20 +245,20 @@ function updateTowerCount() {
 
 function generateTowers(count) {
   const towers = [];
-  
+
   // Table of predefined tower locations
   const towerTable = [
     { x: 1000, y: 1000, color: 'red' },     // First tower
     { x: 1500, y: 800, color: 'blue' },     // Second tower
     { x: 700, y: 1600, color: 'green' }     // Third tower
   ];
-  
+
   // Add up to three towers from the table
   const numTowers = Math.min(count, towerTable.length);
-  
+
   for (let i = 0; i < numTowers; i++) {
     const tower = towerTable[i];
-    
+
     towers.push(new Canon({
       objectNumber: i,
       objectName: `canon${i}`,
@@ -220,18 +270,23 @@ function generateTowers(count) {
       color: tower.color,
     }));
   }
-  
-  return towers;
-} 
 
-function preload() { 
-  partyConnect("wss://p5js-spaceman-server-29f6636dfb6c.herokuapp.com", "jkv-gameAreaV1");
+  return towers;
+}
+
+function preload() {
+  partyConnect("wss://p5js-spaceman-server-29f6636dfb6c.herokuapp.com", "jkv-stategoV3");
 
   shared = partyLoadShared("shared", {
     gameObjects: [],  // Start with empty array
     canonTowerHits: Array(15).fill(0),
     canonTowerCount: 3,
     canonTowerShootingInterval: 1000,
+
+    gameState: "GAME-SETUP",
+    winningTeam: null,
+    resetFlag: false,
+    coreCommandLost: false,  // New shared state
   });
   me = partyLoadMyShared({
     playerName: "observer",
@@ -301,41 +356,93 @@ function getPlanetColorScheme(planetIndex) {
 function draw() {
   background(220);
 
-  switch (gameState) {
-    case "START-SCREEN":
+  // --- Host Logic ---
+//  if (partyIsHost()) {
+//    handleHostDuties(); 
+//  }
+
+  switch (shared.gameState) {
+    case "GAME-SETUP":
       drawGameInProgress()
-//      drawStartScreen();
-//      showStartMessage();
+      drawGameSetup()
       break;
-    case "SET-START-VALUES":
-//      setStartValues();
-//      gameState = "GAME-IN-PROGRESS";
-      break;
-    case "GAME-IN-PROGRESS":
+    case "IN-GAME":
       drawGameInProgress()
-//      updateGameState();
-//      validateGameState();
+
+
+//      drawInGame();
+//      if (me.status !== 'inBattle') {
+//        handleMovement();
+//      }
+
+      //      updateGameState();
+      //      validateGameState();
       break;
-    case "GAME-WON":
-//      showGameState();
-//      showGameWonMessage();
+    case "GAME-FINISHED":
+      drawGameFinished();
       break;
     case "GAME-LOST":
- //     showGameState();
- //     showGameOverMessage();
+      //     showGameState();
+      //     showGameOverMessage();
       break;
   }
+/*
+  console.log("Game State:", shared.gameState);
+  fill(255);
+  circle(600, 600, 20);
+  // Draw Game Area Boundary
+  stroke(150);
+  noFill();
+  rect(GAME_AREA_X, GAME_AREA_Y, GAME_AREA_WIDTH, GAME_AREA_HEIGHT);
+  noStroke();
+
+  // --- Draw Player Info in Lower Left ---
+  const infoX = 20;
+  const infoStartY = SCREEN_HEIGHT - 100;
+  const infoLineHeight = 20;
+  let currentY = infoStartY;
+
+  fill(255);
+  textSize(14);
+  textAlign(LEFT, TOP);
+
+  text(`Players: ${activeSpacecrafts.length}`, infoX, currentY);
+  currentY += infoLineHeight;
+
+  text(`My Status: ${me.status}`, infoX, currentY);
+  currentY += infoLineHeight;
+
+  text(`Game State: ${shared.gameState}`, infoX, currentY);
+  currentY += infoLineHeight;
+ 
+  if (partyIsHost()) {
+    fill(255, 223, 0);
+    textSize(16);
+    text("HOST", infoX, currentY);
+    fill(255);
+    textSize(14);
+  }
+  // --- End Player Info ---
+
+  // --- Draw Status Messages Above Game Area ---
+  const statusMsgX = GAME_AREA_X + GAME_AREA_WIDTH / 2;
+  const statusMsgY = GAME_AREA_Y - 30;
+
+  if (me.status === 'inBattle' && me.battleOutcome.result !== 'pending') {
+    fill(255, 255, 0);
+    textAlign(CENTER, CENTER);
+    textSize(20);
+    let outcomeMsg = `Battle vs ${me.battleOutcome.opponentInfo?.name || '??'}: ${me.battleOutcome.result.toUpperCase()}! Click anywhere to continue...`;
+    text(outcomeMsg, statusMsgX, statusMsgY);
+  }
+    */
 }
 
-function drawGameInProgress() {
-
-
-}
 
 function drawGameInProgress() {
 
   // Debug loading status every 60 frames
-// JENSK Out commented while developing
+  // JENSK Out commented while developing
 
   debugFrameCount++;
   if (debugFrameCount >= 60) {
@@ -344,7 +451,7 @@ function drawGameInProgress() {
       console.log(`Still loading: ${imagesLoaded}/${totalExpectedImages} (${Math.floor(imagesLoaded / totalExpectedImages * 100)}%)`);
     }
   }
-    
+
 
   if (!meHost && partyIsHost()) {
     meHost = true;
@@ -357,13 +464,13 @@ function drawGameInProgress() {
   }
 
   selectedPlanet = solarSystem.planets[me.planetIndex];
-  
+
   // Safety check for selectedPlanet before accessing its properties
   if (!selectedPlanet) {
     console.error("Selected planet is undefined, using default planet");
     selectedPlanet = solarSystem.planets[0]; // Use first planet as fallback
   }
-  
+
   fixedMinimap.update(selectedPlanet.diameterPlanet, selectedPlanet.xWarpGateUp, selectedPlanet.yWarpGateUp, selectedPlanet.xWarpGateDown, selectedPlanet.yWarpGateDown, selectedPlanet.diameterWarpGate);
   activeSpacecrafts = spacecrafts.filter(f => f.planetIndex >= 0); // Only target visible spacecrafts - changed filter
 
@@ -397,7 +504,7 @@ function drawGameInProgress() {
   angleMode(RADIANS);
 
   drawGameArea()
-  if (me.planetIndex === 3){
+  if (me.planetIndex === 3) {
     planet3EffectManager.updateAndDraw(me.xGlobal, me.xLocal, me.yGlobal, me.yLocal);
   }
 
@@ -592,7 +699,7 @@ function performHostAction() {
             const spacecraftsOnPlanet3 = activeSpacecrafts.filter(f => f.planetIndex === 3);
             if (spacecraftsOnPlanet3.length > 0) {
               const nearestSpacecraft = canon.findNearestSpacecraft(spacecraftsOnPlanet3);
-              
+
               if (nearestSpacecraft) {
                 canon.shoot(nearestSpacecraft);
                 canon.lastShotTime = currentTime;
@@ -669,7 +776,7 @@ function drawGameArea() {
     console.error("Selected planet is undefined in drawGameArea");
     return; // Skip drawing if planet is undefined
   }
-  
+
   if (detailsLevel.showGameAreaImage) {
     let cropX = me.xGlobal;
     let cropY = me.yGlobal;
@@ -698,24 +805,24 @@ function drawGameArea() {
     fill('white');
     textAlign(RIGHT, BOTTOM);
     textSize(16);
-    text(`${colorScheme.name}`, 
-         screenLayout.xGameArea + screenLayout.cropWidth - 20, 
-         screenLayout.yGameArea + screenLayout.cropHeight - 10);
+    text(`${colorScheme.name}`,
+      screenLayout.xGameArea + screenLayout.cropWidth - 20,
+      screenLayout.yGameArea + screenLayout.cropHeight - 10);
     pop();
- 
+
   } else {
     // Get colors consistent with the planet type
     const colorScheme = getPlanetColorScheme(me.planetIndex);
-    
+
     // Draw the planet with a radial gradient
     drawRadialGradient(
-      screenLayout.xGameArea - me.xGlobal + selectedPlanet.diameterPlanet / 2, 
-      screenLayout.yGameArea - me.yGlobal + selectedPlanet.diameterPlanet / 2, 
+      screenLayout.xGameArea - me.xGlobal + selectedPlanet.diameterPlanet / 2,
+      screenLayout.yGameArea - me.yGlobal + selectedPlanet.diameterPlanet / 2,
       selectedPlanet.diameterPlanet,
-      colorScheme.center, 
+      colorScheme.center,
       colorScheme.edge
     );
-    
+
     // Black out areas outside the game area
     fill('black');
     rect(0, 0, screenLayout.xGameArea, screenLayout.screenHeight);
@@ -724,15 +831,15 @@ function drawGameArea() {
 
     // Also draw warp gates in non-image mode
     drawWarpGatesOnGameArea();
-    
+
     // Draw planet name in the bottom right of the game area
     push();
     fill('white');
     textAlign(RIGHT, BOTTOM);
     textSize(16);
-    text(`${colorScheme.name} Planet`, 
-         screenLayout.xGameArea + screenLayout.cropWidth - 20, 
-         screenLayout.yGameArea + screenLayout.cropHeight - 10);
+    text(`${colorScheme.name} Planet`,
+      screenLayout.xGameArea + screenLayout.cropWidth - 20,
+      screenLayout.yGameArea + screenLayout.cropHeight - 10);
     pop();
   }
 
@@ -743,7 +850,7 @@ function drawGameArea() {
       spacecraft.drawBullets();
     }
   });
-} 
+}
 
 // Helper function to draw a radial gradient with array colors instead of color() objects
 function drawRadialGradient(x, y, diameter, colorCenterArray, colorEdgeArray) {
@@ -751,16 +858,16 @@ function drawRadialGradient(x, y, diameter, colorCenterArray, colorEdgeArray) {
   noStroke();
   const radius = diameter / 2;
   const numSteps = 50; // More steps = smoother gradient
-  
+
   for (let i = numSteps; i > 0; i--) {
     const step = i / numSteps;
     const currentRadius = radius * step;
-    
+
     // Interpolate between the two colors using arrays instead of color objects
     const r = lerp(colorCenterArray[0], colorEdgeArray[0], 1 - step);
     const g = lerp(colorCenterArray[1], colorEdgeArray[1], 1 - step);
     const b = lerp(colorCenterArray[2], colorEdgeArray[2], 1 - step);
-    
+
     fill(r, g, b);
     circle(x, y, currentRadius * 2);
   }
@@ -1072,7 +1179,7 @@ function checkCollisionsWithWarpGate() {
   if (!selectedPlanet) {
     return; // Skip collision check if planet is undefined
   }
-  
+
   // Check if warp gate is in cooldown
   const currentTime = millis();
   const isCooldown = currentTime - me.lastWarpTime < gameConstants.warpCooldownTime;
@@ -1090,8 +1197,8 @@ function checkCollisionsWithWarpGate() {
     } else {
       me.planetIndex++;
     }
-    me.xGlobal = solarSystem.planets[me.planetIndex].xWarpGateUp - me.xLocal; 
-    me.yGlobal = solarSystem.planets[me.planetIndex].yWarpGateUp - me.yLocal; 
+    me.xGlobal = solarSystem.planets[me.planetIndex].xWarpGateUp - me.xLocal;
+    me.yGlobal = solarSystem.planets[me.planetIndex].yWarpGateUp - me.yLocal;
     me.lastWarpTime = currentTime; // Set the last warp time
 
     return;
@@ -1101,12 +1208,12 @@ function checkCollisionsWithWarpGate() {
 
   if (di < selectedPlanet.diameterWarpGate / 2) {
     if (me.planetIndex === 0) {
-      me.planetIndex = 4; 
+      me.planetIndex = 4;
     } else {
       me.planetIndex--;
     }
-    me.xGlobal = solarSystem.planets[me.planetIndex].xWarpGateDown - me.xLocal; 
-    me.yGlobal = solarSystem.planets[me.planetIndex].yWarpGateDown - me.yLocal; 
+    me.xGlobal = solarSystem.planets[me.planetIndex].xWarpGateDown - me.xLocal;
+    me.yGlobal = solarSystem.planets[me.planetIndex].yWarpGateDown - me.yLocal;
     me.lastWarpTime = currentTime; // Set the last warp time
     return;
   }
@@ -1141,6 +1248,8 @@ function mousePressed() {
     yGlobal: me.yGlobal,
   };
   me.bullets.push(bullet);
+
+  mousePresse2()
 }
 
 
@@ -1149,6 +1258,7 @@ function createSpacecrafts() {
     spacecrafts.push(new Spacecraft({
       playerNumber: i,
       playerName: "player" + i,
+      playerDisplayName: "playerDisplay" + i,
       teamNumber: 0,
       xLocal: screenLayout.cropWidth / 2 + 100,
       yLocal: screenLayout.cropHeight / 2,
@@ -1161,6 +1271,23 @@ function createSpacecrafts() {
       bullets: [],
       hits: Array(15).fill(0),
       planetIndex: -1,
+
+      team: null,
+      characterId: null,
+      characterRank: null,
+      characterName: null,
+      characterInstanceId: null, 
+      x: -1000,
+      y: -1000,
+      size: SPACECRAFT_SIZE,
+      isReady: false,
+      hasCharacter: false,
+      isRevealed: false,
+      hasBattled: false,
+      status: "available", // 'available', 'inBattle', 'lost', 'needsCharacter', 'wonGameTrigger'
+      inBattleWith: null,
+      battleOutcome: { result: 'pending', opponentInfo: null },
+      lastProcessedResetFlag: false
     }));
   }
 }
@@ -1187,6 +1314,7 @@ function spawn(spacecraft) {
   console.log("Spawning spacecraft:", spacecraft.playerName);
   me.playerNumber = spacecraft.playerNumber;
   me.playerName = spacecraft.playerName;
+  me.playerDisplayName = spacecraft.playerDisplayName;
   me.xLocal = spacecraft.xLocal;
   me.yLocal = spacecraft.yLocal;
   me.xGlobal = spacecraft.xGlobal;
@@ -1197,4 +1325,20 @@ function spawn(spacecraft) {
   me.hits = Array(15).fill(0);
   me.planetIndex = screenLayout.startPlanetIndex;
   me.lastWarpTime = 0; // Reset warp cooldown when spawning
+  me.team = spacecraft.team;
+  me.characterId = spacecraft.characterId;
+  me.characterRank = spacecraft.characterRank;
+  me.characterName = spacecraft.characterName;
+  me.characterInstanceId = spacecraft.characterInstanceId;
+  me.x = spacecraft.x;
+  me.y = spacecraft.y;
+  me.size = spacecraft.size;
+  me.isReady = spacecraft.isReady;
+  me.hasCharacter = spacecraft.hasCharacter;
+  me.isRevealed = spacecraft.isRevealed;
+  me.hasBattled = spacecraft.hasBattled;
+  me.status = spacecraft.status;
+  me.inBattleWith = spacecraft.inBattleWith;
+  me.battleOutcome = spacecraft.battleOutcome;
+  me.lastProcessedResetFlag = spacecraft.lastProcessedResetFlag;
 }
