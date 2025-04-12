@@ -58,7 +58,7 @@ class Spacecraft {
         rotate(head + 1.555);
   
         if (detailsLevel.showGameAreaImage) {
-          // Blue cloaked
+          // Blue cloaked.
           
 //          if (this.playerNumber === 0) {
             drawingContext.shadowBlur = 60; // Increased blur
